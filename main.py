@@ -17,6 +17,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+def alive():
+    return {"alive": True}
+
 class Position(BaseModel):
     x: float
     y: float
@@ -81,14 +85,35 @@ def get_visitors_count(time_of_day: str) -> int:
         return random.randint(5, 15)
 
 def get_shelf_type_and_size(shelf_id: str) -> dict:
-    """Возвращает тип и размер полки по ID"""
-    type_size_mapping = {
-        "small-veg-2": {"type": "vegetables", "size": [1, 1.5, 0.6]},
-        "small-bakery-2": {"type": "bakery", "size": [1, 1.5, 0.6]},
-        "medium-dairy-3": {"type": "dairy", "size": [1.5, 1.5, 0.6]},
-        "large-electronics-4": {"type": "electronics", "size": [2.5, 1.5, 0.6]},
-    }
-    return type_size_mapping.get(shelf_id, {"type": "unknown", "size": [1, 1.5, 0.6]})
+    """Возвращает тип и размер полки по ID в формате 'размер-тип-номер'"""
+    try:
+        parts = shelf_id.split('-')
+        if len(parts) < 2:
+            return {"type": "unknown", "size": [1.5, 1.5, 0.6]}
+
+        size_map = {
+            "small": [1.0, 1.5, 0.6],
+            "medium": [1.5, 1.5, 0.6],
+            "large": [2.5, 1.5, 0.6]
+        }
+
+        shelf_size = size_map.get(parts[0].lower(), [1.5, 1.5, 0.6])
+        shelf_type = parts[1].lower()
+
+        type_mapping = {
+            "vegetables": "vegetables",
+            "bakery": "bakery",
+            "dairy": "dairy",
+            "electronics": "electronics",
+            "produce" : "produce",
+            "meat" : "meat",
+        }
+
+        shelf_type = type_mapping.get(shelf_type, shelf_type)
+
+        return {"type": shelf_type, "size": shelf_size}
+    except:
+        return {"type": "unknown", "size": [1.5, 1.5, 0.6]}
 
 @app.post("/simulate")
 async def simulate(sim: SimRequest):
@@ -114,7 +139,7 @@ async def simulate(sim: SimRequest):
         if sim.categories:
             preferences = random.sample(sim.categories, k=random.randint(1, min(3, len(sim.categories))))
         else:
-            preferences = random.choices(["bakery", "vegetables", "dairy", "electronics"], k=random.randint(1, 3))
+            preferences = random.choices(["bakery", "vegetables", "dairy", "electronics", "produce", "meat"], k=random.randint(1, 3))
 
         if sim.prefersDiscounts:
             preferences.append("discount_lover")
@@ -122,25 +147,37 @@ async def simulate(sim: SimRequest):
         visited_shelves = []
         path = [{"x": entrance.x, "z": entrance.z}]
 
-        for shelf in shelves:
+        sorted_shelves = sorted(
+            shelves,
+            key=lambda s: (
+                0 if any(pref.lower() in get_shelf_type_and_size(s.id)["type"].lower() for pref in preferences) or
+                   ("discount_lover" in preferences and s.discount and s.discount > 0)
+                else 1,
+                distance(entrance, s.position)
+            )
+        )
+
+        for shelf in sorted_shelves:
             shelf_data = get_shelf_type_and_size(shelf.id)
             shelf_type = shelf_data["type"]
-            shelf_size = shelf_data["size"]
 
-            if shelf_type in preferences or ("discount_lover" in preferences and shelf.discount and shelf.discount > 0):
-                rotated_position = rotate_position(shelf.position, shelf.rotation)
-                path.append({"x": rotated_position.x, "z": rotated_position.z})
+            if (any(pref.lower() in shelf_type.lower() for pref in preferences) or
+                ("discount_lover" in preferences and shelf.discount and shelf.discount > 0)):
+
+                approach_position = Position(
+                    x=shelf.position.x - 0.5 * math.sin(math.radians(shelf.rotation)),
+                    y=shelf.position.y,
+                    z=shelf.position.z - 0.5 * math.cos(math.radians(shelf.rotation))
+                )
+
+                path.append({"x": approach_position.x, "z": approach_position.z})
                 visited_shelves.append(shelf.id)
 
-                grid_x = int((rotated_position.x + config.storeSize.width/2) / grid_size)
-                grid_z = int((rotated_position.z + config.storeSize.length/2) / grid_size)
+                grid_x = int((approach_position.x + config.storeSize.width/2) / grid_size)
+                grid_z = int((approach_position.z + config.storeSize.length/2) / grid_size)
 
                 if 0 <= grid_x < grid_width and 0 <= grid_z < grid_length:
                     heatmap_grid[grid_z][grid_x] += 1
-
-                if shelf.interactions > 20:
-                    continue
-
 
         path.append({"x": entrance.x, "z": entrance.z})
 
@@ -175,4 +212,4 @@ async def simulate(sim: SimRequest):
     }
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
