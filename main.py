@@ -164,7 +164,6 @@ async def simulate(sim: SimRequest):
         visited_shelves = []
         path = [{"x": entrance.x, "z": entrance.z}]
 
-        # Сортируем полки по расстоянию от входа и соответствию предпочтениям
         sorted_shelves = sorted(
             shelves,
             key=lambda s: (
@@ -180,11 +179,9 @@ async def simulate(sim: SimRequest):
             shelf_data = get_shelf_type_and_size(shelf.id)
             shelf_type = shelf_data["type"]
 
-            # Проверяем, соответствует ли полка предпочтениям
             if (any(pref.lower() in shelf_type.lower() for pref in preferences) or
                 ("discount_lover" in preferences and shelf.discount and shelf.discount > 0)):
 
-                # Добавляем точку перед полкой (на расстоянии 0.5 метра)
                 approach_position = Position(
                     x=shelf.position.x - 0.5 * math.sin(math.radians(shelf.rotation)),
                     y=shelf.position.y,
@@ -202,7 +199,6 @@ async def simulate(sim: SimRequest):
                 if 0 <= grid_x < grid_width and 0 <= grid_z < grid_length:
                     heatmap_grid[grid_z][grid_x] += 1
 
-        # Находим ближайшую кассу от последней посещенной полки
         if cash_desks:
             nearest_cash_desk = find_nearest_cash_desk(last_position, cash_desks)
             if nearest_cash_desk:
@@ -210,7 +206,6 @@ async def simulate(sim: SimRequest):
                 cash_desk_key = f"{nearest_cash_desk.x},{nearest_cash_desk.z}"
                 cash_desk_queues[cash_desk_key] += 1
 
-        # Возвращаемся к выходу
         path.append({"x": entrance.x, "z": entrance.z})
 
         visitors.append({
