@@ -115,6 +115,22 @@ def get_shelf_type_and_size(shelf_id: str) -> dict:
     except:
         return {"type": "unknown", "size": [1.5, 1.5, 0.6]}
 
+def find_nearest_cash_desk(position: Position, cash_desks: List[Position]) -> Position:
+    """Находит ближайшую кассу к заданной позиции"""
+    if not cash_desks:
+        return None
+
+    nearest = cash_desks[0]
+    min_dist = distance(position, nearest)
+
+    for desk in cash_desks[1:]:
+        dist = distance(position, desk)
+        if dist < min_dist:
+            min_dist = dist
+            nearest = desk
+
+    return nearest
+
 @app.post("/simulate")
 async def simulate(sim: SimRequest):
     config = sim.config
@@ -126,6 +142,7 @@ async def simulate(sim: SimRequest):
 
     visitors = []
     heatmap = {}
+    cash_desk_queues = {f"{desk.x},{desk.z}": 0 for desk in cash_desks}
 
     grid_size = 1.0
     grid_width = int(config.storeSize.width / grid_size)
@@ -147,6 +164,7 @@ async def simulate(sim: SimRequest):
         visited_shelves = []
         path = [{"x": entrance.x, "z": entrance.z}]
 
+        # Сортируем полки по расстоянию от входа и соответствию предпочтениям
         sorted_shelves = sorted(
             shelves,
             key=lambda s: (
@@ -157,13 +175,16 @@ async def simulate(sim: SimRequest):
             )
         )
 
+        last_position = entrance
         for shelf in sorted_shelves:
             shelf_data = get_shelf_type_and_size(shelf.id)
             shelf_type = shelf_data["type"]
 
+            # Проверяем, соответствует ли полка предпочтениям
             if (any(pref.lower() in shelf_type.lower() for pref in preferences) or
                 ("discount_lover" in preferences and shelf.discount and shelf.discount > 0)):
 
+                # Добавляем точку перед полкой (на расстоянии 0.5 метра)
                 approach_position = Position(
                     x=shelf.position.x - 0.5 * math.sin(math.radians(shelf.rotation)),
                     y=shelf.position.y,
@@ -172,13 +193,24 @@ async def simulate(sim: SimRequest):
 
                 path.append({"x": approach_position.x, "z": approach_position.z})
                 visited_shelves.append(shelf.id)
+                last_position = approach_position
 
+                # Обновляем тепловую карту
                 grid_x = int((approach_position.x + config.storeSize.width/2) / grid_size)
                 grid_z = int((approach_position.z + config.storeSize.length/2) / grid_size)
 
                 if 0 <= grid_x < grid_width and 0 <= grid_z < grid_length:
                     heatmap_grid[grid_z][grid_x] += 1
 
+        # Находим ближайшую кассу от последней посещенной полки
+        if cash_desks:
+            nearest_cash_desk = find_nearest_cash_desk(last_position, cash_desks)
+            if nearest_cash_desk:
+                path.append({"x": nearest_cash_desk.x, "z": nearest_cash_desk.z})
+                cash_desk_key = f"{nearest_cash_desk.x},{nearest_cash_desk.z}"
+                cash_desk_queues[cash_desk_key] += 1
+
+        # Возвращаемся к выходу
         path.append({"x": entrance.x, "z": entrance.z})
 
         visitors.append({
@@ -202,7 +234,8 @@ async def simulate(sim: SimRequest):
             "avg_queue_time": round(sum(v["queue_time"] for v in visitors) / len(visitors), 2) if visitors else 0,
             "max_queue_length": max(max(row) for row in heatmap_grid) if heatmap_grid else 0,
             "time_of_day": sim.timeOfDay,
-            "calculated_visitors": num_visitors
+            "calculated_visitors": num_visitors,
+            "cash_desk_queues": cash_desk_queues
         },
         "store_dimensions": {
             "width": config.storeSize.width,

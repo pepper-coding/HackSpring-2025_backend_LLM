@@ -1,10 +1,10 @@
 INFO: Platform: win32
 INFO: Version Info: v0.3.0
 DEBUG: Log Path: cp.log
-DEBUG: command: ['python', 'D:\\hack_dstu_2025\\main.py']
+DEBUG: command: ['python', 'D:\\Python все работы\\hack_dstu_2025\\main.py']
 DEBUG: file: None
 DEBUG: pause: True
 DEBUG: repl: python
-DEBUG: args: ['D:\\hack_dstu_2025\\main.py']
-INFO: return code: 1 (0x1)
-INFO: elapsed time: 0.039666
+DEBUG: args: ['D:\\Python все работы\\hack_dstu_2025\\main.py']
+INFO: return code: 3221225786 (0xc000013a)
+INFO: elapsed time: 0.477851
